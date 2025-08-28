@@ -1,4 +1,5 @@
 import telebot
+from telebot import apihelper
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from config import Config
 from models.user import User, Tenant, CustomCommand
@@ -8,6 +9,9 @@ import json
 import requests
 from datetime import datetime
 
+# Aktifkan middleware
+apihelper.ENABLE_MIDDLEWARE = True
+
 # Buat tabel database
 Base.metadata.create_all(bind=engine)
 
@@ -16,28 +20,34 @@ bot = telebot.TeleBot(Config.BOT_TOKEN)
 
 # Fungsi untuk mendapatkan prefix berdasarkan user
 def get_user_prefix(user_id):
-    db: Session = next(get_db())
-    user = db.query(User).filter(User.user_id == user_id).first()
-    if user and user.tenant:
-        return user.tenant.prefix
-    return Config.DEFAULT_PREFIX
+    try:
+        db: Session = next(get_db())
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if user and user.tenant:
+            return user.tenant.prefix
+        return Config.DEFAULT_PREFIX
+    except:
+        return Config.DEFAULT_PREFIX
 
 # Middleware untuk menangani user
 @bot.middleware_handler(update_types=['message'])
 def register_user(bot_instance, message):
-    db: Session = next(get_db())
-    user_id = message.from_user.id
-    user = db.query(User).filter(User.user_id == user_id).first()
-    
-    if not user:
-        user = User(
-            user_id=user_id,
-            username=message.from_user.username,
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name
-        )
-        db.add(user)
-        db.commit()
+    try:
+        db: Session = next(get_db())
+        user_id = message.from_user.id
+        user = db.query(User).filter(User.user_id == user_id).first()
+        
+        if not user:
+            user = User(
+                user_id=user_id,
+                username=message.from_user.username,
+                first_name=message.from_user.first_name,
+                last_name=message.from_user.last_name
+            )
+            db.add(user)
+            db.commit()
+    except Exception as e:
+        print(f"Error in middleware: {e}")
 
 # Handler perintah start
 @bot.message_handler(commands=['start'])
@@ -169,7 +179,7 @@ def handle_timer(message):
 def handle_joke(message):
     jokes = [
         "Kenapa programmer tidak bisa tidur? Karena ada bug di kasurnya!",
-        "Apa bedanya programmer dan politikus? Programmer hanya buat janji di kode, politikus beneran janji tapi gak ditepati!",
+        "Apa bedanya programmer dan dpr? Programmer hanya buat janji di kode, dpr beneran janji tapi gak ditepati!",
         "Kenapa komputer jarang sakit? Karena punya Windows!",
         "Apa bahasa programming favorit ular? Py-thon!"
     ]
@@ -201,20 +211,23 @@ def handle_broadcast(message):
         return
     
     broadcast_message = ' '.join(message.text.split()[1:])
-    db: Session = next(get_db())
-    users = db.query(User).all()
-    
-    success = 0
-    failed = 0
-    
-    for user in users:
-        try:
-            bot.send_message(user.user_id, f"📢 **Broadcast dari Admin:**\n\n{broadcast_message}", parse_mode='Markdown')
-            success += 1
-        except:
-            failed += 1
-    
-    bot.reply_to(message, f"✅ Broadcast selesai:\nBerhasil: {success}\nGagal: {failed}")
+    try:
+        db: Session = next(get_db())
+        users = db.query(User).all()
+        
+        success = 0
+        failed = 0
+        
+        for user in users:
+            try:
+                bot.send_message(user.user_id, f"📢 **Broadcast dari Admin:**\n\n{broadcast_message}", parse_mode='Markdown')
+                success += 1
+            except:
+                failed += 1
+        
+        bot.reply_to(message, f"✅ Broadcast selesai:\nBerhasil: {success}\nGagal: {failed}")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {e}")
 
 @bot.message_handler(commands=['users'])
 def handle_users(message):
@@ -222,9 +235,12 @@ def handle_users(message):
         bot.reply_to(message, "❌ Anda tidak memiliki izin untuk menggunakan perintah ini.")
         return
     
-    db: Session = next(get_db())
-    user_count = db.query(User).count()
-    bot.reply_to(message, f"👥 Total pengguna: {user_count}")
+    try:
+        db: Session = next(get_db())
+        user_count = db.query(User).count()
+        bot.reply_to(message, f"👥 Total pengguna: {user_count}")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {e}")
 
 # Handler untuk perintah ekonomi
 @bot.message_handler(commands=['kurs'])
@@ -263,25 +279,46 @@ def handle_crypto(message):
 # Handler untuk perintah custom
 @bot.message_handler(func=lambda message: True)
 def handle_custom_commands(message):
-    db: Session = next(get_db())
-    user_id = message.from_user.id
-    user = db.query(User).filter(User.user_id == user_id).first()
-    
-    if user and user.tenant:
-        # Cek perintah custom
-        text = message.text.lower()
-        custom_command = db.query(CustomCommand).filter(
-            CustomCommand.tenant_id == user.tenant_id,
-            CustomCommand.command == text.split()[0].replace(user.tenant.prefix, '')
-        ).first()
+    try:
+        db: Session = next(get_db())
+        user_id = message.from_user.id
+        user = db.query(User).filter(User.user_id == user_id).first()
         
-        if custom_command:
-            bot.reply_to(message, custom_command.response)
-            return
+        if user and user.tenant:
+            # Cek perintah custom
+            text = message.text.lower()
+            custom_command = db.query(CustomCommand).filter(
+                CustomCommand.tenant_id == user.tenant_id,
+                CustomCommand.command == text.split()[0].replace(user.tenant.prefix, '')
+            ).first()
+            
+            if custom_command:
+                bot.reply_to(message, custom_command.response)
+                return
+    except Exception as e:
+        print(f"Error handling custom command: {e}")
     
     # Jika bukan perintah custom, tangani dengan handler default
     if message.text.startswith('/'):
         bot.reply_to(message, "❌ Perintah tidak dikenali. Gunakan /help untuk melihat daftar perintah.")
+
+# Health check endpoint untuk Zeabur
+from flask import Flask, request, jsonify
+import threading
+
+app = Flask(__name__)
+
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "ok", "message": "T.AI Bot is running"})
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
+
+# Jalankan Flask di thread terpisah
+flask_thread = threading.Thread(target=run_flask)
+flask_thread.daemon = True
+flask_thread.start()
 
 # Jalankan bot
 if __name__ == '__main__':
