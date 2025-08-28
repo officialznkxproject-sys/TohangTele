@@ -1,0 +1,15 @@
+services:
+  - name: t-ai-bot
+    source:
+      type: github
+      repo: your-username/t-ai-bot
+    build:
+      dockerfile: Dockerfile
+    deploy:
+      resources:
+        cpu: 0.1
+        memory: 128Mi
+    ports:
+      - protocol: HTTP
+        port: 8080
+        httpPath: /health
