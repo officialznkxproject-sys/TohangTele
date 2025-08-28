@@ -1,6 +1,5 @@
 import telebot
 from telebot import apihelper
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from config import Config
 from models.user import User, Tenant, CustomCommand
 from utils.database import get_db, Base, engine
@@ -8,6 +7,8 @@ from sqlalchemy.orm import Session
 import json
 import requests
 from datetime import datetime
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Aktifkan middleware
 apihelper.ENABLE_MIDDLEWARE = True
@@ -17,6 +18,28 @@ Base.metadata.create_all(bind=engine)
 
 # Inisialisasi bot
 bot = telebot.TeleBot(Config.BOT_TOKEN)
+
+# Simple HTTP server untuk health check
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok", "message": "T.AI Bot is running"}).encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def run_health_server():
+    server = HTTPServer(('0.0.0.0', 8080), HealthHandler)
+    print("Health check server running on port 8080")
+    server.serve_forever()
+
+# Jalankan health server di thread terpisah
+health_thread = threading.Thread(target=run_health_server)
+health_thread.daemon = True
+health_thread.start()
 
 # Fungsi untuk mendapatkan prefix berdasarkan user
 def get_user_prefix(user_id):
@@ -179,7 +202,7 @@ def handle_timer(message):
 def handle_joke(message):
     jokes = [
         "Kenapa programmer tidak bisa tidur? Karena ada bug di kasurnya!",
-        "Apa bedanya programmer dan dpr? Programmer hanya buat janji di kode, dpr beneran janji tapi gak ditepati!",
+        "Apa bedanya programmer dan politikus? Programmer hanya buat janji di kode, politikus beneran janji tapi gak ditepati!",
         "Kenapa komputer jarang sakit? Karena punya Windows!",
         "Apa bahasa programming favorit ular? Py-thon!"
     ]
@@ -301,24 +324,6 @@ def handle_custom_commands(message):
     # Jika bukan perintah custom, tangani dengan handler default
     if message.text.startswith('/'):
         bot.reply_to(message, "❌ Perintah tidak dikenali. Gunakan /help untuk melihat daftar perintah.")
-
-# Health check endpoint untuk Zeabur
-from flask import Flask, request, jsonify
-import threading
-
-app = Flask(__name__)
-
-@app.route('/health')
-def health_check():
-    return jsonify({"status": "ok", "message": "T.AI Bot is running"})
-
-def run_flask():
-    app.run(host='0.0.0.0', port=8080)
-
-# Jalankan Flask di thread terpisah
-flask_thread = threading.Thread(target=run_flask)
-flask_thread.daemon = True
-flask_thread.start()
 
 # Jalankan bot
 if __name__ == '__main__':
