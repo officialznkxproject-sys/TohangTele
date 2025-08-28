@@ -13,3 +13,8 @@ services:
       - protocol: HTTP
         port: 8080
         httpPath: /health
+    healthCheck:
+      httpPath: /health
+      initialDelay: 10
+      period: 10
+      timeout: 5
